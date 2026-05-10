@@ -1,8 +1,17 @@
 # Scrcpy over WebRTC (CloudPhone)
 
-基于 WebRTC 和 Scrcpy 的高性能、低延迟云手机/云桌面解决方案，无需客户端，可以通过网页直接连接。
+基于 WebRTC 和 Scrcpy 的高性能、低延迟云手机解决方案，无需客户端，可以通过网页直接连接。
+采用 **Fat Agent (直连模式)** 架构，结合 **硬件级 PTS 透传** 技术，实现媲美原生 Scrcpy 的丝滑体验。
 
-**注意：此为面向社区的半开源版本，仅开源了前端源代码（Vue3 + WebRTC）。信令服务器与 Android Agentd 等核心组件以编译好的二进制发布。**
+## 核心特性
+
+- **极致流畅**: 采用零扫描流解析 (Zero-Search Parsing)，不引入新的内存拷贝，性能和原生scrcpy基本一致。
+- ~~**公网增强**: ≈原生支持 IPv6 直连，彻底绕过运营商 CGNAT 封锁，显著提升移动网络下的打洞成功率。~~ (功能不稳定，已移除)
+- **全能交互**: 支持多指触控、物理按键模拟、自定义映射（键盘按键映射到屏幕）、WebADB 终端、实时快照。
+- **动态控制**: 支持在连接前或连接后通过 UI 面板动态修改设备分辨率、码率、帧率以及开启/关闭 BWE 动态码率。
+- **一键部署**: 支持 WebUSB/WebADB 浏览器直连物理设备部署，无需本地安装 ADB 环境。
+- **网页直连**: 支持所有终端（IOS/Android/Win/Mac/Linux）通过浏览器连接。
+- **摆脱ADB**: 部署后无需通过有线或无线的形式连接adb，并支持将adb转发到网页中直接使用。
 
 ## 快速开始
 
@@ -24,11 +33,11 @@ cd agentd
 ```
 
 #### 3. Docker / Redroid 容器
-当 Agent 运行在隔离容器内时，建议手动指定宿主机的 IP 和端口，并在运行容器时将端口暴露出来（例如：`-p 50000:50000/udp`）：
+Agent 运行在隔离容器内时，需指定宿主机ip, 并在Docker启动参数中增加 `-p 50000:50000/udp`
 ```bash
 ./run.sh -id redroid-01 \
   -signaling ws://<服务器IP>:8443 \
-  -external-addr <host ip> \
+  -external-addr "<宿主机-IP>" \
   -webrtc-port 50000
 ```
 
@@ -95,9 +104,12 @@ npm run dev
 | `-signaling` | 信令服务器地址 | 必填 |
 | `-external-addr` | 手动指定宿主机或公网 IP | 自动检测 |
 | `-webrtc-port` | WebRTC 绑定的固定通信端口 | 50000 |
-| `-bitrate` | 视频码率 | 4000000 |
+| `-bitrate` | 视频码率 (bps) | 4000000 |
 | `-max-fps` | 最高帧率 | 不限制 |
 | `-max-size` | 视频最长边 | 不限制 |
+| `-bwe` | 启用 WebRTC 带宽评估 (TWCC) 及动态码率调节 | true |
+| `-snapshot-interval`| 仪表盘快照更新频率 (秒) | 10 |
+| `-root` | 强制以 Root 权限启动服务 | false |
 
 ## 协议说明 (面向第三方对接)
 
