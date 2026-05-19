@@ -45,7 +45,7 @@ export const useKeymapStore = defineStore('keymap', {
     return {
       config: data,
       isEditMode: false,
-      showKeyHints: true
+      showKeyHints: false
     }
   },
   getters: {

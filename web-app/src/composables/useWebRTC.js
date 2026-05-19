@@ -5,6 +5,7 @@ import { debugInfo, debugLog, debugWarn } from '@/utils/debug'
 export function useWebRTC(deviceId, options = {}) {
   const status = ref('disconnected')
   const error = ref(null)
+  const audioMuted = ref(false)
 
   let ws = null
   let pc = null
@@ -12,6 +13,13 @@ export function useWebRTC(deviceId, options = {}) {
   let inputChannel = null
   let adbChannel = null
   let videoElementGetter = null  // 获取 video 元素的函数
+  let videoStream = null
+  let audioStream = null
+  let audioElement = null
+  let audioContext = null
+  let audioSourceNode = null
+  let audioGainNode = null
+  let audioUnlockHandler = null
   let touchSeq = 0
   const DEVICE_W = ref(1080)
   const DEVICE_H = ref(1920)
@@ -202,6 +210,111 @@ function handleDeviceMessage(payload) {
     })
   }
 
+  function getAudioGain() {
+    const value = Number(options.audio_gain ?? options.audioGain ?? 1)
+    if (!Number.isFinite(value)) return 1
+    return Math.max(0, Math.min(5, value))
+  }
+
+  function getAudioLowLatency() {
+    return Boolean(options.audio_low_latency ?? options.audioLowLatency)
+  }
+
+  function clearAudioUnlockHandler() {
+    if (audioUnlockHandler) {
+      window.removeEventListener('pointerdown', audioUnlockHandler)
+      window.removeEventListener('keydown', audioUnlockHandler)
+      audioUnlockHandler = null
+    }
+  }
+
+  function cleanupAudioPlayback() {
+    clearAudioUnlockHandler()
+    if (audioSourceNode) {
+      audioSourceNode.disconnect()
+      audioSourceNode = null
+    }
+    if (audioGainNode) {
+      audioGainNode.disconnect()
+      audioGainNode = null
+    }
+    if (audioContext) {
+      audioContext.close().catch(() => {})
+      audioContext = null
+    }
+    if (audioElement) {
+      audioElement.pause()
+      audioElement.srcObject = null
+      audioElement = null
+    }
+    audioStream = null
+  }
+
+  function playAudioElement(gain) {
+    if (!audioStream) return
+
+    clearAudioUnlockHandler()
+
+    if (audioElement) {
+      audioElement.pause()
+      audioElement.srcObject = null
+    }
+
+    audioElement = new Audio()
+    audioElement.autoplay = true
+    audioElement.playsInline = true
+    audioElement.muted = audioMuted.value
+    audioElement.volume = Math.min(1, gain)
+    audioElement.srcObject = audioStream
+
+    const play = () => {
+      if (!audioElement) return
+      audioElement.play()
+        .then(() => {
+          debugLog('[WebRTC] Audio element playing, volume:', audioElement.volume)
+          if (audioUnlockHandler) {
+            window.removeEventListener('pointerdown', audioUnlockHandler)
+            window.removeEventListener('keydown', audioUnlockHandler)
+            audioUnlockHandler = null
+          }
+        })
+        .catch(err => {
+          debugWarn('[WebRTC] audio play() blocked, waiting for user gesture:', err)
+          if (!audioUnlockHandler) {
+            audioUnlockHandler = () => play()
+            window.addEventListener('pointerdown', audioUnlockHandler, { once: true })
+            window.addEventListener('keydown', audioUnlockHandler, { once: true })
+          }
+        })
+    }
+
+    audioElement.addEventListener('canplay', play, { once: true })
+    audioElement.addEventListener('playing', () => {
+      debugLog('[WebRTC] audio element state=playing')
+    })
+    audioElement.addEventListener('error', () => {
+      console.warn('[WebRTC] audio element error:', audioElement?.error)
+    })
+    play()
+  }
+
+  function playAudioTrack(track) {
+    if (!options.audio) return
+
+    cleanupAudioPlayback()
+    audioStream = new MediaStream([track])
+    const gain = getAudioGain()
+
+    if (getAudioLowLatency()) {
+      debugWarn('[WebRTC] Low latency audio experiment is disabled for now; using audio element playback')
+    }
+    playAudioElement(gain)
+
+    if (track.addEventListener) {
+      track.addEventListener('ended', cleanupAudioPlayback, { once: true })
+    }
+  }
+
   function createPeerConnection() {
     if (pc) return
 
@@ -214,18 +327,23 @@ function handleDeviceMessage(payload) {
     adbChannel = pc.createDataChannel('adb-channel', { ordered: true })
     adbChannel.binaryType = 'arraybuffer' // 必须设置为 arraybuffer 以支持二进制流
     setupAdbChannel(adbChannel)
+    videoStream = new MediaStream()
 
     pc.ontrack = (evt) => {
       debugLog('[WebRTC] ontrack event:', evt.track.kind, evt.streams)
+      if (evt.track.kind === 'audio') {
+        playAudioTrack(evt.track)
+        return
+      }
+
       const video = videoElementGetter ? videoElementGetter() : null
       if (video) {
-        if (evt.streams && evt.streams[0]) {
-          video.srcObject = evt.streams[0]
-        } else {
-          const stream = new MediaStream()
-          stream.addTrack(evt.track)
-          video.srcObject = stream
+        if (!videoStream) videoStream = new MediaStream()
+        const exists = videoStream.getTracks().some(track => track.id === evt.track.id)
+        if (!exists) {
+          videoStream.addTrack(evt.track)
         }
+        video.srcObject = videoStream
         debugLog('[WebRTC] Set srcObject to video element')
         // 强制播放
         video.play().catch(e => console.warn('[WebRTC] play() failed:', e))
@@ -293,6 +411,15 @@ function handleDeviceMessage(payload) {
     if (!pc) return null
     try {
       const stats = await pc.getStats()
+      let currentRtt = 0
+      
+      // First pass to find RTT from candidate pair
+      for (const report of stats.values()) {
+        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+          currentRtt = (report.currentRoundTripTime || 0) * 1000
+        }
+      }
+
       for (const report of stats.values()) {
         if (report.type === 'inbound-rtp' && report.kind === 'video') {
           const now = report.timestamp
@@ -329,7 +456,13 @@ function handleDeviceMessage(payload) {
           }
 
           const bitrate = dt > 0 ? ((report.bytesReceived - prevStats.bytesReceived) * 8 / dt / 1000).toFixed(0) : 0
-          const jbDelay = (report.jitterBufferDelay / (report.jitterBufferEmittedCount || 1) * 1000).toFixed(0)
+          const jbDelayNum = (report.jitterBufferDelay / (report.jitterBufferEmittedCount || 1) * 1000) || 0
+          const jbDelay = jbDelayNum.toFixed(0)
+          
+          // Estimate E2E latency: RTT (network) + JB (buffer) + Decode (client) + 10ms (server processing)
+          const decodeTimeNum = (report.totalDecodeTime / (report.framesDecoded || 1) * 1000) || 0
+          const e2eDelay = (currentRtt + jbDelayNum + decodeTimeNum + 10).toFixed(0)
+
           const pliCount = report.pliCount || 0
           const lostCount = report.packetsLost || 0
 
@@ -339,7 +472,7 @@ function handleDeviceMessage(payload) {
             framesDecoded: report.framesDecoded
           }
 
-          return { fps, bitrate, jbDelay, pliCount, pauseCount, lostCount }
+          return { fps, bitrate, jbDelay, e2eDelay, rtt: currentRtt.toFixed(0), pliCount, pauseCount, lostCount }
         }
       }
     } catch (e) {
@@ -352,6 +485,18 @@ function handleDeviceMessage(payload) {
     prevStats = { timestamp: 0, bytesReceived: 0, framesDecoded: 0 }
     pauseCount = 0
     wasPaused = false
+  }
+
+  function setAudioMuted(muted) {
+    audioMuted.value = Boolean(muted)
+    if (audioElement) {
+      audioElement.muted = audioMuted.value
+    }
+  }
+
+  function toggleAudioMuted() {
+    setAudioMuted(!audioMuted.value)
+    return audioMuted.value
   }
 
   function sendForward(payload) {
@@ -533,6 +678,8 @@ function handleDeviceMessage(payload) {
       pc.close()
       pc = null
     }
+    videoStream = null
+    cleanupAudioPlayback()
     if (ws) {
       ws.close()
       ws = null
@@ -552,6 +699,7 @@ function handleDeviceMessage(payload) {
   return {
     status,
     error,
+    audioMuted,
     setVideoGetter,
     connect,
     disconnect,
@@ -563,6 +711,8 @@ function handleDeviceMessage(payload) {
     onAdbData,
     sendAdbData,
     getVideoStats,
-    resetStats
+    resetStats,
+    setAudioMuted,
+    toggleAudioMuted
   }
 }

@@ -4,6 +4,11 @@
     <div class="device-client-main">
       <!-- 主视频容器 -->
       <div class="video-wrapper" ref="containerRef">
+        <!-- 移动端退出按钮 (右上角) -->
+        <button v-if="isMobile" class="mobile-close-fab" @click="deviceStore.clearActiveDevice()" title="关闭连接">
+          ✕
+        </button>
+
         <!-- 悬浮全屏按钮 (移入视频容器内，保证全屏时可见) -->
         <button class="fullscreen-fab" @click="toggleFullscreen" title="全屏">
           <svg class="icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
@@ -13,7 +18,7 @@
           ref="videoElement"
           autoplay
           playsinline
-          muted
+          :muted="!localSettings.audio"
           class="video-stream"
           @mousedown="onMouseDown"
           @mousemove="onMouseMove"
@@ -31,7 +36,11 @@
         <div v-if="videoStats" class="stats-badge">
           <span class="stat-fps">{{ videoStats.fps }}fps</span>
           <span class="stat-delimiter">|</span>
-          <span class="stat-delay">JB {{ videoStats.jbDelay }}ms</span>
+          <span class="stat-delay" title="网络延迟(RTT) + 缓冲(JB) + 解码 + 云端处理">E2E ~{{ videoStats.e2eDelay }}ms</span>
+          <span class="stat-delimiter">|</span>
+          <span class="stat-delay" title="Jitter Buffer">JB {{ videoStats.jbDelay }}ms</span>
+          <span class="stat-delimiter">|</span>
+          <span class="stat-delay" title="网络往返延迟">RTT {{ videoStats.rtt }}ms</span>
           <span class="stat-delimiter">|</span>
           <span class="stat-bitrate">{{ videoStats.bitrate }}kbps</span>
           <span class="stat-delimiter">|</span>
@@ -82,6 +91,17 @@
             <button class="fab-item" @click="quickKey('input keyevent 4'); showMobileMenu=false">
               <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg> 返回
             </button>
+            <button class="fab-item" @click="quickKey('input keyevent 24'); showMobileMenu=false">
+              <svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="19" y1="9" x2="19" y2="15"></line><line x1="16" y1="12" x2="22" y2="12"></line></svg> 音量+
+            </button>
+            <button class="fab-item" @click="quickKey('input keyevent 25'); showMobileMenu=false">
+              <svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="19" y1="12" x2="15" y2="12"></line></svg> 音量-
+            </button>
+            <button class="fab-item" @click="togglePageMute(); showMobileMenu=false">
+              <svg v-if="pageAudioMuted" class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+              <svg v-else class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15 9a5 5 0 0 1 0 6"></path><path d="M17.7 6.3a9 9 0 0 1 0 11.4"></path></svg>
+              {{ pageAudioMuted ? '取消静音' : '页面静音' }}
+            </button>
             <button class="fab-item" @click="showConsole = !showConsole; showMobileMenu=false">
               <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg> 终端
             </button>
@@ -109,6 +129,9 @@
             </button>
             
             <div class="fab-divider"></div>
+            <button class="fab-item danger" @click="goBackToList; showMobileMenu=false">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg> 断开连接
+            </button>
             <button class="fab-item danger" @click="quitAgent; showMobileMenu=false">
               <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="15"></line><line x1="15" y1="9" x2="9" y2="15"></line></svg> 退出 Agent
             </button>
@@ -134,6 +157,19 @@
         <button class="sidebar-btn" @click="quickKey('input keyevent 4')" title="BACK">
           <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
           <span class="btn-text">返回</span>
+        </button>
+        <button class="sidebar-btn" @click="quickKey('input keyevent 24')" title="音量加">
+          <svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="19" y1="9" x2="19" y2="15"></line><line x1="16" y1="12" x2="22" y2="12"></line></svg>
+          <span class="btn-text">音量+</span>
+        </button>
+        <button class="sidebar-btn" @click="quickKey('input keyevent 25')" title="音量减">
+          <svg class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="19" y1="12" x2="15" y2="12"></line></svg>
+          <span class="btn-text">音量-</span>
+        </button>
+        <button class="sidebar-btn" :class="{ active: pageAudioMuted }" @click="togglePageMute" :title="pageAudioMuted ? '取消页面静音' : '页面静音'">
+          <svg v-if="pageAudioMuted" class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+          <svg v-else class="icon" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15 9a5 5 0 0 1 0 6"></path><path d="M17.7 6.3a9 9 0 0 1 0 11.4"></path></svg>
+          <span class="btn-text">{{ pageAudioMuted ? '取消静音' : '静音' }}</span>
         </button>
         <button class="sidebar-btn" @click="showConsole = !showConsole" title="控制台">
           <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
@@ -252,7 +288,6 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import { useDeviceStore } from '@/stores/devices'
 import { useWebRTC } from '@/composables/useWebRTC'
 import { useAdb } from '@/composables/useAdb'
@@ -271,10 +306,14 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['recommend-layout'])
+const emit = defineEmits(['recommend-layout', 'close'])
 
-const route = useRoute()
-const currentId = computed(() => props.deviceId || route.params.deviceId)
+const deviceStore = useDeviceStore()
+const currentId = computed(() => props.deviceId)
+
+const goBackToList = () => {
+  deviceStore.clearActiveDevice()
+}
 
 const videoElement = ref(null)
 const containerRef = ref(null)
@@ -284,6 +323,7 @@ const screenshotData = ref(null)
 const showSettingsModal = ref(false)
 
 const localSettings = ref(getDeviceSettings(currentId.value))
+const pageAudioMuted = ref(Boolean(localSettings.value.pageAudioMuted))
 
 const scrcpyOptions = computed(() => {
   return {
@@ -293,12 +333,18 @@ const scrcpyOptions = computed(() => {
     min_bitrate: localSettings.value.minBitrate * 1000000,
     max_bitrate: localSettings.value.maxBitrate * 1000000,
     bwe: localSettings.value.bwe,
+    audio: localSettings.value.audio,
+    audio_gain: localSettings.value.audioGain,
+    audio_source: localSettings.value.audioSource,
+    audio_dup: localSettings.value.audioDup,
+    audio_low_latency: localSettings.value.audioLowLatency,
     debug: localSettings.value.debug
   }
 })
 
 function saveSettings(newSettings) {
   localSettings.value = newSettings
+  pageAudioMuted.value = Boolean(newSettings.pageAudioMuted)
   saveDeviceSettings(currentId.value, newSettings)
   
   if (currentId.value) {
@@ -312,6 +358,7 @@ function saveSettings(newSettings) {
 function resetSettings() {
   deleteDeviceSettings(currentId.value)
   localSettings.value = getDeviceSettings(currentId.value) // Loads global settings now
+  pageAudioMuted.value = Boolean(localSettings.value.pageAudioMuted)
   if (currentId.value) {
     webrtc.disconnect()
     closeAdb()
@@ -471,6 +518,8 @@ watch(currentId, (newId) => {
   if (newId) {
     webrtc.disconnect()
     closeAdb()
+    localSettings.value = getDeviceSettings(newId)
+    pageAudioMuted.value = Boolean(localSettings.value.pageAudioMuted)
     webrtc = useWebRTC(newId, scrcpyOptions.value)
     setupWebRTC()
   }
@@ -478,6 +527,7 @@ watch(currentId, (newId) => {
 
 function setupWebRTC() {
   webrtc.setVideoGetter(() => videoElement.value)
+  webrtc.setAudioMuted(pageAudioMuted.value)
   webrtc.connect()
   
   // 设置截图回调
@@ -506,7 +556,17 @@ function setupWebRTC() {
   }, 1000)
 }
 
+const handlePopState = (e) => {
+  // 当用户按下物理返回键，或者浏览器后退时
+  // 阻止默认行为，而是断开连接
+  deviceStore.clearActiveDevice()
+}
+
 onMounted(() => {
+  // Push a fake state to the history so the back button can be caught
+  window.history.pushState({ panel: 'open' }, '')
+  window.addEventListener('popstate', handlePopState)
+  
   setupWebRTC()
   document.addEventListener('fullscreenchange', () => {
     isFullscreen.value = !!document.fullscreenElement
@@ -521,6 +581,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('popstate', handlePopState)
   webrtc.disconnect()
   closeAdb()
   document.removeEventListener('keydown', onGlobalKeyDown)
@@ -648,6 +709,10 @@ function quickKey(cmd) {
   webrtc.sendCommand(cmd)
 }
 
+function togglePageMute() {
+  pageAudioMuted.value = webrtc.toggleAudioMuted()
+}
+
 function startAdb() {
   if (adbTermContainer.value) {
     initAdb(adbTermContainer.value)
@@ -662,7 +727,6 @@ function scrollToBottom() {
   }, 50)
 }
 
-const deviceStore = useDeviceStore()
 function quitAgent() {
   if (confirm(`警告：确定要停止设备 "${currentId.value}" 上的 Agent 进程吗？停止后该设备将下线。`)) {
     deviceStore.quitAgent(currentId.value)
@@ -748,7 +812,7 @@ function onTouchEnd(e) {
 .fullscreen-fab {
   position: absolute;
   top: 16px;
-  right: 16px;
+  right: 60px; /* Moved left to accommodate close button */
   width: 36px;
   height: 36px;
   background: rgba(0, 0, 0, 0.5);
@@ -765,6 +829,35 @@ function onTouchEnd(e) {
 }
 .fullscreen-fab .icon { width: 18px; height: 18px; }
 .fullscreen-fab:hover { background: rgba(0, 0, 0, 0.8); transform: scale(1.1); }
+
+.mobile-close-fab {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  background: rgba(248, 81, 73, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 100;
+  font-size: 16px;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+.mobile-close-fab:hover { background: rgba(248, 81, 73, 1); transform: scale(1.1); }
+
+/* PC 且无需要返回按钮时，全屏按钮在最右边 */
+@media (min-width: 1025px) {
+  .fullscreen-fab {
+    right: 16px;
+  }
+}
 
 .stats-badge {
   position: absolute;
@@ -903,6 +996,7 @@ function onTouchEnd(e) {
 }
 
 .sidebar-btn:hover { background: #333; border-color: var(--accent); color: white; }
+.sidebar-btn.active { background: rgba(88, 166, 255, 0.18); border-color: var(--accent); color: white; }
 .sidebar-btn.danger:hover { background: rgba(248, 81, 73, 0.2); border-color: var(--error); color: var(--error); }
 .sidebar-btn.danger { color: #888; }
 .sidebar-btn.add-btn { border-style: dashed; }

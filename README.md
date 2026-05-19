@@ -7,7 +7,7 @@
 
 <p align="center">
   <img src="screenshot/screenshot-pc.png" width="70%" />
-  <img src="screenshot/screenshot-phone.jpg" width="28%" />
+  <img src="screenshot/screenshot-phone.jpg" width="20%" />
 </p>
 
 ## 核心特性

@@ -52,6 +52,48 @@
             </div>
           </div>
 
+          <div class="form-group">
+            <label>开启音频 (Opus):</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="audio-toggle" v-model="localSettings.audio" />
+              <label for="audio-toggle"></label>
+            </div>
+          </div>
+
+          <div class="form-group" v-if="localSettings.audio">
+            <label>音量增益:</label>
+            <input type="number" v-model.number="localSettings.audioGain" min="0.5" max="3" step="0.25" />
+            <small class="hint">默认：1，过高可能失真</small>
+          </div>
+
+          <div class="form-group" v-if="localSettings.audio">
+            <label>音频源:</label>
+            <select v-model="localSettings.audioSource">
+              <option value="playback">playback</option>
+              <option value="output">output</option>
+            </select>
+            <small class="hint" v-if="localSettings.audioSource === 'playback'">不抢占手机本地声音，但只能捕获允许播放捕获的应用声音</small>
+            <small class="hint" v-else>捕获系统输出更完整，但会接管手机本地声音</small>
+          </div>
+
+          <div class="form-group" v-if="localSettings.audio && localSettings.audioSource === 'playback'">
+            <label>保留手机本地声音:</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="audio-dup-toggle" v-model="localSettings.audioDup" />
+              <label for="audio-dup-toggle"></label>
+            </div>
+            <small class="hint">仅 playback 模式有效；关闭后可能仍由系统路由决定是否本机出声</small>
+          </div>
+
+          <div class="form-group" v-if="localSettings.audio">
+            <label>默认页面静音:</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="page-audio-muted-toggle" v-model="localSettings.pageAudioMuted" />
+              <label for="page-audio-muted-toggle"></label>
+            </div>
+            <small class="hint">只静音浏览器播放，不修改虚机系统音量</small>
+          </div>
+
         </div>
         <div class="modal-footer">
           <button class="btn btn-danger" v-if="isCustom" @click="resetToGlobal">恢复全局设置</button>
@@ -187,7 +229,7 @@ function resetToGlobal() {
   color: var(--text-secondary);
 }
 
-.form-group input[type="number"], .form-group input[type="text"] {
+.form-group input[type="number"], .form-group input[type="text"], .form-group select {
   background: var(--bg-primary);
   border: 1px solid var(--border);
   padding: 10px;

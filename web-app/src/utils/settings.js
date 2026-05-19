@@ -5,15 +5,27 @@ export const defaultSettings = {
   bwe: true,
   minBitrate: 8,
   maxBitrate: 20,
+  audio: false,
+  audioGain: 1,
+  audioSource: 'playback',
+  audioDup: true,
+  audioLowLatency: false,
+  pageAudioMuted: false,
   debug: false
 }
 
 function parseSettings(parsed) {
+  const hasAudioDup = Object.prototype.hasOwnProperty.call(parsed, 'audioDup')
   if (parsed.bitrate > 1000) {
     parsed.bitrate = Math.max(1, Math.round(parsed.bitrate / 1000000))
     if (parsed.minBitrate > 1000) parsed.minBitrate = Math.max(1, Math.round(parsed.minBitrate / 1000000))
     if (parsed.maxBitrate > 1000) parsed.maxBitrate = Math.max(1, Math.round(parsed.maxBitrate / 1000000))
   }
+  if (parsed.audioGain === undefined) parsed.audioGain = defaultSettings.audioGain
+  if (parsed.audioSource === undefined) parsed.audioSource = defaultSettings.audioSource
+  if (!hasAudioDup && parsed.audioSource === 'output') parsed.audioSource = defaultSettings.audioSource
+  if (parsed.audioDup === undefined) parsed.audioDup = defaultSettings.audioDup
+  if (parsed.pageAudioMuted === undefined) parsed.pageAudioMuted = defaultSettings.pageAudioMuted
   return parsed
 }
 
